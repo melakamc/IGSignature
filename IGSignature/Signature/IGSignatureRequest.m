@@ -2,7 +2,8 @@
 //  IGSignatureRequest.m
 //  IGSignature
 //
-//  Created by Melaka Atalugamage on 25/04/2017
+//  Created by Chong Francis on 13年4月1日.
+//  Copyright (c) 2013年 Ignition Soft. All rights reserved.
 //
 
 #import "IGSignatureRequest.h"
@@ -18,7 +19,7 @@
         self.path = path;
         NSMutableDictionary* auth = [NSMutableDictionary dictionary];
         NSMutableDictionary* query = [NSMutableDictionary dictionary];
-
+        
         [theQuery enumerateKeysAndObjectsUsingBlock:^(NSString* key, NSString* obj, BOOL *stop) {
             NSString* lowerKey = [key lowercaseString];
             if ([lowerKey hasPrefix:@"auth_"]) {
@@ -28,13 +29,55 @@
             }
         }];
         self.auth = [auth copy];
-        self.query = [query copy];
+        self.query = [self sortParameters:query];
         self.method = [method uppercaseString];
-
+        
         _signed = NO;
     }
     return self;
 }
+
+- (NSDictionary *)sortParameters:(NSMutableDictionary *)params{
+    [params enumerateKeysAndObjectsUsingBlock:^(NSString *  _Nonnull paramKey, id  _Nonnull obj, BOOL * _Nonnull stop) {
+        if ([obj isKindOfClass:[NSDictionary class]]) {
+            NSDictionary *tempObj = [NSMutableDictionary new];
+            
+            NSArray * sortedKeys = [[obj allKeys] sortedArrayUsingSelector: @selector(localizedCaseInsensitiveCompare:)];
+            
+            
+            for (NSString *key in sortedKeys) {
+                [tempObj setValue:[(NSDictionary *)obj objectForKey:key] forKey:key];
+            }
+            
+            [params setObject:tempObj forKey:paramKey];
+            
+        }else if([obj isKindOfClass:[NSArray class]]){
+            
+            NSMutableArray *tmpObj = [NSMutableArray new];
+            for (int i = 0; i < [(NSArray *)obj count]; i++) {
+                
+                id childObj = [(NSArray *)obj objectAtIndex:i];
+                if ([childObj isKindOfClass:[NSDictionary class]]) {
+                    
+                    NSMutableDictionary *tempDict = [NSMutableDictionary new];
+                    NSArray * sortedKeys = [[childObj allKeys] sortedArrayUsingSelector: @selector(localizedCaseInsensitiveCompare:)];
+                    
+                    for (NSString *key in sortedKeys) {
+                        [tempDict setValue:[(NSDictionary *)childObj objectForKey:key] forKey:key];
+                    }
+                    [tmpObj addObject:tempDict];
+                }else{
+                    [tmpObj addObject:childObj];
+                }
+            }
+            
+            [params setObject:tmpObj forKey:paramKey];
+        }
+    }];
+    
+    return params;
+}
+
 
 -(NSDictionary*) sign:(IGSignatureToken*)token {
     return [self sign:token withTime:[NSDate date]];
@@ -43,22 +86,22 @@
 -(NSDictionary*) sign:(IGSignatureToken*)token withTime:(NSDate*)time {
     NSAssert(token.key != nil, @"token key cannot be nil");
     NSAssert(time != nil, @"time cannot be nil");
-
+    
     NSString* timestamp = [NSString stringWithFormat:@"%lld",
                            [[NSNumber numberWithDouble:[time timeIntervalSince1970]] longLongValue]];
     self.auth = @{
-        @"auth_version": @"1.0",
-        @"auth_key": token.key,
-        @"auth_timestamp": timestamp
-    };
+                  @"auth_version": @"1.0",
+                  @"auth_key": token.key,
+                  @"auth_timestamp": timestamp
+                  };
     NSString* signature = [self signatureWithToken:token];
     self.auth = @{
-        @"auth_version": @"1.0",
-        @"auth_key": token.key,
-        @"auth_timestamp": timestamp,
-        @"auth_signature": signature
-    };
-
+                  @"auth_version": @"1.0",
+                  @"auth_key": token.key,
+                  @"auth_timestamp": timestamp,
+                  @"auth_signature": signature
+                  };
+    
     _signed = YES;
     return self.auth;
 }
@@ -69,6 +112,7 @@
 
 -(NSString*) stringToSign {
     NSArray* components = @[self.method, self.path, self.parameterString];
+    NSLog(@"%@", [components componentsJoinedByString:@"\n"]);
     return [components componentsJoinedByString:@"\n"];
 }
 
@@ -85,13 +129,29 @@
     [params enumerateKeysAndObjectsUsingBlock:^(NSString* rootkey, id obj, BOOL *stop) {
         if ([obj isKindOfClass:[NSDictionary class]]) {
             
-            
             //additional step to make sure all child parameters are sorted
             NSArray * sortedKeys = [[obj allKeys] sortedArrayUsingSelector: @selector(localizedCaseInsensitiveCompare:)];
             
             
             for (NSString *key in sortedKeys) {
                 [lowerCaseParams setObject:[(NSDictionary *)obj objectForKey:key] forKey:[NSString stringWithFormat:@"%@[%@]",[rootkey lowercaseString],key]];
+            }
+            
+        }else if([obj isKindOfClass:[NSArray class]]){
+            for (int i=0; i < [(NSArray *)obj count] ; i++) {
+                id childObj = [(NSArray *)obj objectAtIndex:i];
+                
+                if ([childObj isKindOfClass:[NSDictionary class]]) {
+                    
+                    NSArray * sortedKeys = [[childObj allKeys] sortedArrayUsingSelector: @selector(localizedCaseInsensitiveCompare:)];
+                    
+                    
+                    for (NSString *key in sortedKeys) {
+                        [lowerCaseParams setObject:[(NSDictionary *)childObj objectForKey:key] forKey:[NSString stringWithFormat:@"%@[%zd][%@]",[rootkey lowercaseString],i,key]];
+                    }
+                }else{
+                    [lowerCaseParams setObject:childObj forKey:[NSString stringWithFormat:@"%@[%zd]",[rootkey lowercaseString],i]];
+                }
             }
             
         }else{
@@ -111,6 +171,9 @@
                                                                                andValue:[lowerCaseParams objectForKey:key]]];
     }];
     
+    NSLog(@"%@",[encodedParamerers componentsJoinedByString:@"&"]);
     return [encodedParamerers componentsJoinedByString:@"&"];
 }
+
+
 @end
