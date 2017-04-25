@@ -2,8 +2,7 @@
 //  IGSignatureRequest.m
 //  IGSignature
 //
-//  Created by Chong Francis on 13年4月1日.
-//  Copyright (c) 2013年 Ignition Soft. All rights reserved.
+//  Created by Melaka Atalugamage on 25/04/2017
 //
 
 #import "IGSignatureRequest.h"
@@ -80,22 +79,38 @@
     if (self.auth) {
         [params addEntriesFromDictionary:self.auth];
     }
-
+    
     // Convert keys to lowercase strings
     NSMutableDictionary* lowerCaseParams = [NSMutableDictionary dictionaryWithCapacity:[params count]];
-    [params enumerateKeysAndObjectsUsingBlock:^(NSString* key, NSString* obj, BOOL *stop) {
-        [lowerCaseParams setObject:obj forKey:[key lowercaseString]];
+    [params enumerateKeysAndObjectsUsingBlock:^(NSString* rootkey, id obj, BOOL *stop) {
+        if ([obj isKindOfClass:[NSDictionary class]]) {
+            
+            
+            //additional step to make sure all child parameters are sorted
+            NSArray * sortedKeys = [[obj allKeys] sortedArrayUsingSelector: @selector(localizedCaseInsensitiveCompare:)];
+            
+            
+            for (NSString *key in sortedKeys) {
+                [lowerCaseParams setObject:[(NSDictionary *)obj objectForKey:key] forKey:[NSString stringWithFormat:@"%@[%@]",[rootkey lowercaseString],key]];
+            }
+            
+        }else{
+            
+            [lowerCaseParams setObject:obj forKey:[rootkey lowercaseString]];
+        }
     }];
-
+    
+    
     // Exclude signature from signature generation!
     [lowerCaseParams removeObjectForKey:@"auth_signature"];
-
+    
     NSArray* sortedKeys = [[lowerCaseParams allKeys] sortedArrayUsingSelector:@selector(compare:)];
     NSMutableArray* encodedParamerers = [NSMutableArray array];
     [sortedKeys enumerateObjectsUsingBlock:^(NSString* key, NSUInteger idx, BOOL *stop) {
         [encodedParamerers addObject:[IGQueryEncoder encodeParamWithoutEscapingUsingKey:key
                                                                                andValue:[lowerCaseParams objectForKey:key]]];
     }];
+    
     return [encodedParamerers componentsJoinedByString:@"&"];
 }
 @end
