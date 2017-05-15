@@ -10,9 +10,10 @@
 #import "IGSignatureToken.h"
 #import "IGQueryEncoder.h"
 #import "NSString+SHA256HMAC.h"
+#import "OrderedDictionary.h"
 
 @implementation IGSignatureRequest
-
+    
 -(id) initWithMethod:(NSString*)method path:(NSString*)path query:(NSDictionary*)theQuery {
     self = [super init];
     if (self) {
@@ -36,16 +37,17 @@
     }
     return self;
 }
-
+    
 - (NSDictionary *)sortParameters:(NSMutableDictionary *)params{
     [params enumerateKeysAndObjectsUsingBlock:^(NSString *  _Nonnull paramKey, id  _Nonnull obj, BOOL * _Nonnull stop) {
         if ([obj isKindOfClass:[NSDictionary class]]) {
-            NSDictionary *tempObj = [NSMutableDictionary new];
+            MutableOrderedDictionary *tempObj = [MutableOrderedDictionary new];
             
             NSArray * sortedKeys = [[obj allKeys] sortedArrayUsingSelector: @selector(localizedCaseInsensitiveCompare:)];
             
             
             for (NSString *key in sortedKeys) {
+                
                 [tempObj setValue:[(NSDictionary *)obj objectForKey:key] forKey:key];
             }
             
@@ -59,11 +61,22 @@
                 id childObj = [(NSArray *)obj objectAtIndex:i];
                 if ([childObj isKindOfClass:[NSDictionary class]]) {
                     
-                    NSMutableDictionary *tempDict = [NSMutableDictionary new];
+                    MutableOrderedDictionary *tempDict = [MutableOrderedDictionary new];
                     NSArray * sortedKeys = [[childObj allKeys] sortedArrayUsingSelector: @selector(localizedCaseInsensitiveCompare:)];
                     
                     for (NSString *key in sortedKeys) {
-                        [tempDict setValue:[(NSDictionary *)childObj objectForKey:key] forKey:key];
+                        
+                        id innerObj = [(NSDictionary *)childObj objectForKey:key];
+                        if ([innerObj isKindOfClass:[NSDictionary class]]) {
+                            MutableOrderedDictionary *innerTempDict = [MutableOrderedDictionary new];
+                            NSArray * innerSortedKeys = [[innerObj allKeys] sortedArrayUsingSelector: @selector(localizedCaseInsensitiveCompare:)];
+                            for (NSString *innerKey in innerSortedKeys) {
+                                [innerTempDict setValue:[(NSDictionary *)innerObj objectForKey:innerKey] forKey:innerKey];
+                            }
+                            [tempDict setObject:innerTempDict forKey:key];
+                        }else{
+                            [tempDict setValue:innerObj forKey:key];
+                        }
                     }
                     [tmpObj addObject:tempDict];
                 }else{
@@ -77,12 +90,12 @@
     
     return params;
 }
-
-
+    
+    
 -(NSDictionary*) sign:(IGSignatureToken*)token {
     return [self sign:token withTime:[NSDate date]];
 }
-
+    
 -(NSDictionary*) sign:(IGSignatureToken*)token withTime:(NSDate*)time {
     NSAssert(token.key != nil, @"token key cannot be nil");
     NSAssert(time != nil, @"time cannot be nil");
@@ -105,19 +118,18 @@
     _signed = YES;
     return self.auth;
 }
-
+    
 -(NSString*) signatureWithToken:(IGSignatureToken*)token {
     return [[self stringToSign] SHA256HMACWithKey:token.secret];
 }
-
+    
 -(NSString*) stringToSign {
     NSArray* components = @[self.method, self.path, self.parameterString];
-    NSLog(@"%@", [components componentsJoinedByString:@"\n"]);
     return [components componentsJoinedByString:@"\n"];
 }
-
+    
 #pragma mark - Private
-
+    
 -(NSString*) parameterString {
     NSMutableDictionary* params = [NSMutableDictionary dictionaryWithDictionary:self.query];
     if (self.auth) {
@@ -134,7 +146,22 @@
             
             
             for (NSString *key in sortedKeys) {
-                [lowerCaseParams setObject:[(NSDictionary *)obj objectForKey:key] forKey:[NSString stringWithFormat:@"%@[%@]",[rootkey lowercaseString],key]];
+                
+                id innerObj = [(NSDictionary *)obj objectForKey:key] ;
+                if ([innerObj isKindOfClass:[NSDictionary class]]) {
+                    //additional step to make sure all child parameters are sorted
+                    NSArray * childSortedKeys = [[innerObj allKeys] sortedArrayUsingSelector: @selector(localizedCaseInsensitiveCompare:)];
+                    
+                    
+                    for (NSString *childKey in childSortedKeys) {
+                        
+                        [lowerCaseParams setObject:[(NSDictionary *)innerObj objectForKey:childKey] forKey:[NSString stringWithFormat:@"%@[%@][%@]",[rootkey lowercaseString],key,childKey]];
+                        
+                    }
+                    
+                }else{
+                    [lowerCaseParams setObject:innerObj forKey:[NSString stringWithFormat:@"%@[%@]",[rootkey lowercaseString],key]];
+                }
             }
             
         }else if([obj isKindOfClass:[NSArray class]]){
@@ -143,12 +170,33 @@
                 
                 if ([childObj isKindOfClass:[NSDictionary class]]) {
                     
+                    
+                    
                     NSArray * sortedKeys = [[childObj allKeys] sortedArrayUsingSelector: @selector(localizedCaseInsensitiveCompare:)];
                     
                     
                     for (NSString *key in sortedKeys) {
-                        [lowerCaseParams setObject:[(NSDictionary *)childObj objectForKey:key] forKey:[NSString stringWithFormat:@"%@[%zd][%@]",[rootkey lowercaseString],i,key]];
+                        
+                        id innerObj = [(NSDictionary *)childObj objectForKey:key] ;
+                        
+                        if ([innerObj isKindOfClass:[NSDictionary class]]) {
+                            //additional step to make sure all child parameters are sorted
+                            NSArray * childSortedKeys = [[innerObj allKeys] sortedArrayUsingSelector: @selector(localizedCaseInsensitiveCompare:)];
+                            
+                            
+                            for (NSString *childKey in childSortedKeys) {
+                                
+                                [lowerCaseParams setObject:[(NSDictionary *)innerObj objectForKey:childKey] forKey:[NSString stringWithFormat:@"%@[%zd][%@][%@]",[rootkey lowercaseString],i,key, childKey]];
+                                
+                            }
+                            
+                        }else{
+                            [lowerCaseParams setObject:innerObj forKey:[NSString stringWithFormat:@"%@[%zd][%@]",[rootkey lowercaseString],i,key]];
+                        }
+                        
+                        
                     }
+                    
                 }else{
                     [lowerCaseParams setObject:childObj forKey:[NSString stringWithFormat:@"%@[%zd]",[rootkey lowercaseString],i]];
                 }
@@ -171,9 +219,9 @@
                                                                                andValue:[lowerCaseParams objectForKey:key]]];
     }];
     
-    NSLog(@"%@",[encodedParamerers componentsJoinedByString:@"&"]);
+    //NSLog(@"%@",[encodedParamerers componentsJoinedByString:@"&"]);
     return [encodedParamerers componentsJoinedByString:@"&"];
 }
-
-
-@end
+    
+    
+    @end
